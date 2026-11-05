@@ -1,0 +1,20 @@
+[package]
+name = "pxsol-ss"
+version = "0.1.0"
+edition = "2021"
+
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+
+[dependencies]
+solana-account-info = "3.1.1"
+solana-cpi = "3.1.0"
+solana-msg = "3.1.0"
+solana-program-entrypoint = "3.1.1"
+solana-program-error = "3.0.1"
+solana-pubkey = { version = "4.4.0", features = ["curve25519"] }
+solana-rent = "4.5.0"
+solana-system-interface = { version = "3.3.0", features = ["bincode"] }
+solana-sysvar = "5.0.0"
