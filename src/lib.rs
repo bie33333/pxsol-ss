@@ -115,6 +115,9 @@ pub fn process_instruction(
 
     // ============ 3. PDA 派生与校验 ============
     // 靠 PDA 校验来绑定“account_user ↔ account_data”
+    // Here we just verify the account_data address is the expected PDA derived from the 
+    // account_user's public key and the program_id, and in this address it doesn't have to
+    // be an exact account. The address is right doesn't mean there have to be any data initialized.
     let (pda, bump) = Pubkey::find_program_address(&[&account_user.key.to_bytes()], program_id);
 
     msg!("PDA: {}, Bump: {}", pda, bump);
@@ -129,6 +132,7 @@ pub fn process_instruction(
     let rent_exemption = Rent::get()?.minimum_balance(data.len());
 
     // ============ 5. 分支 A：未初始化 → 创建 PDA ============
+    // where the account_data is really initialized.
     if account_data.lamports() == 0 {
         msg!("PDA not initialized, creating account");
 
