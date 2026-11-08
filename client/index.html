@@ -167,7 +167,12 @@ import {
 } from "https://esm.sh/@solana/web3.js@1.95.3";
 
 const PROGRAM_ID = new PublicKey("4C4tdiGW8HK9jnKQDEDtqh6xuKdtPpzE5yFNREi4tNiZ");
-const RPC = "http://127.0.0.1:8899";
+
+// local
+// const RPC = "http://127.0.0.1:8899";
+
+// devnet
+const RPC = "https://api.devnet.solana.com";
 
 const connection = new Connection(RPC, "confirmed");
 

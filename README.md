@@ -1,16 +1,18 @@
-# pxsol-ss 完整运行与部署指南
+# pxsol-ss — Complete Setup and Deployment Guide
 
-pxsol-ss 是一个 Solana 链上极简数据存储程序。每个用户对应一个由程序派生的 PDA；用户每次调用程序时，都会用指令数据完整覆盖该 PDA 中的内容。仓库还包含一个使用 Phantom 的单文件网页客户端。
+pxsol-ss is a minimal on-chain data storage program for Solana. Each user has a program-derived PDA, and every invocation replaces the entire contents of that PDA with the instruction data. This repository also includes a single-page web client that uses Phantom.
 
-## 0. 目标配置
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+## 0. Target configuration
 
 ```text
 Program ID: 4C4tdiGW8HK9jnKQDEDtqh6xuKdtPpzE5yFNREi4tNiZ
-本地 RPC:   http://127.0.0.1:8899
+Local RPC:  http://127.0.0.1:8899
 Devnet RPC: https://api.devnet.solana.com
 ```
 
-仓库根目录为 `~/pxsol-ss` 时，主要文件如下：
+With the repository checked out at `~/pxsol-ss`, the relevant files are:
 
 ```text
 ~/pxsol-ss/
@@ -25,73 +27,73 @@ Devnet RPC: https://api.devnet.solana.com
     └── index.html
 ```
 
-`target/` 是构建产物目录，通常被 Git 忽略。`pxsol_ss-keypair.json` 是用于签署程序地址的 keypair，不是程序升级 authority；不要公开或提交，建议备份。初次部署到新 ledger/集群时需要它来创建指定 Program ID。程序的升级权限由部署时设置的 authority 持有，通常是 CLI 部署钱包；以 `solana program show` 显示的 `Authority` 为准。
+`target/` contains build artifacts and is normally ignored by Git. `pxsol_ss-keypair.json` signs for the program address; it is not the program upgrade authority. Keep it private and backed up. It is needed to create the specified Program ID when deploying to a new ledger or cluster. The upgrade authority is set at deployment and is usually the CLI deploy wallet; check the `Authority` field in `solana program show`.
 
-## 1. 环境与版本
+## 1. Toolchain and versions
 
-本项目使用 Solana 组件化 SDK，构建目标为 SBPFv3。建议使用以下工具版本：
+This project uses the modular Solana SDK and targets SBPFv3. Recommended minimum tool versions:
 
-| 工具 | 要求 | 检查命令 |
+| Tool | Requirement | Check |
 |---|---|---|
-| `cargo-build-sbf` | v4.2.0 或更高 | `cargo build-sbf --version` |
-| Solana / Agave CLI | v4.0.0 或更高 | `solana --version` |
-| Rust edition | 2021 | 查看 `Cargo.toml` |
+| `cargo-build-sbf` | v4.2.0 or later | `cargo build-sbf --version` |
+| Solana / Agave CLI | v4.0.0 or later | `solana --version` |
+| Rust edition | 2021 | Check `Cargo.toml` |
 | Python | Python 3 | `python3 --version` |
 
-`Cargo.toml` 中的两个 feature 不能漏：
+Two features in `Cargo.toml` are required:
 
-- `solana-pubkey` 的 `curve25519`：用于 `find_program_address`。
-- `solana-system-interface` 的 `bincode`：用于构造 `create_account` 和 `transfer` 指令。
+- `curve25519` on `solana-pubkey`, for `find_program_address`.
+- `bincode` on `solana-system-interface`, for constructing `create_account` and `transfer` instructions.
 
-组件依赖版本号不完全相同是正常的，不要为了“统一版本号”手动强行对齐。
+It is normal for modular Solana components to use different version numbers. Do not force them to match manually.
 
-## 2. 编译并验证 SBPFv3
+## 2. Build and verify SBPFv3
 
-在仓库根目录执行：
+From the repository root:
 
 ```bash
 cd ~/pxsol-ss
 cargo build-sbf --arch v3 -- -Znext-lockfile-bump
 ```
 
-产物为 `target/deploy/pxsol_ss.so`。必须显式指定 `--arch v3`，否则可能构建出与目标集群不兼容的字节码。
+The output is `target/deploy/pxsol_ss.so`. Specify `--arch v3` explicitly; otherwise, the resulting bytecode may not be compatible with the target cluster.
 
-验证 ELF header 中的 SBPF flags：
+Verify the SBPF flags in the ELF header:
 
 ```bash
 od -An -tx1 -j 0x30 -N 4 target/deploy/pxsol_ss.so
 ```
 
-期望输出：
+Expected output:
 
 ```text
 03 00 00 00
 ```
 
-也可以使用：
+Alternatively:
 
 ```bash
 LC_ALL=C readelf -h target/deploy/pxsol_ss.so | grep -E 'Machine|Flags'
 ```
 
-期望 `Machine` 为 `Linux BPF`，`Flags` 包含 `0x3, CPU Version: 3`。`LC_ALL=C` 可避免系统语言设置导致 `grep` 匹配不到本地化输出。
+Expect `Machine` to be `Linux BPF` and `Flags` to include `0x3, CPU Version: 3`. `LC_ALL=C` avoids grep failures when `readelf` output is localized.
 
-## 3. 本地验证器部署
+## 3. Deploy to a local validator
 
-### 3.1 启动验证器
+### 3.1 Start the validator
 
-在终端 A 前台启动验证器，保持该终端运行：
+Start the validator in the foreground in terminal A and leave it running:
 
 ```bash
 cd ~/pxsol-ss
 solana-test-validator --reset
 ```
 
-等待日志显示 RPC 地址 `http://127.0.0.1:8899` 后，再进行下一步。`--reset` 会清空本地 ledger；如果要保留本地链状态，不要使用此参数。清空账本前先用 `Ctrl+C` 停止正在运行的验证器。
+Wait until its logs show the RPC address `http://127.0.0.1:8899` before continuing. `--reset` clears the local ledger. Omit it if you want to preserve local chain state. Stop a running validator with `Ctrl+C` before resetting its ledger.
 
-### 3.2 配置 CLI 并检查 RPC
+### 3.2 Configure the CLI and check the RPC
 
-在终端 B 执行：
+In terminal B:
 
 ```bash
 cd ~/pxsol-ss
@@ -99,18 +101,18 @@ solana config set --url http://127.0.0.1:8899
 solana cluster-version
 ```
 
-`cluster-version` 能返回版本号即表示 CLI 已连上本地验证器。
+If `cluster-version` returns a version, the CLI is connected to the local validator.
 
-### 3.3 部署程序
+### 3.3 Deploy the program
 
-确认构建产物和程序 keypair 都存在，并核对程序地址：
+Check that the build artifact and program keypair exist, and verify the program address:
 
 ```bash
 ls -l target/deploy/pxsol_ss.so target/deploy/pxsol_ss-keypair.json
 solana-keygen pubkey target/deploy/pxsol_ss-keypair.json
 ```
 
-keypair 派生出的地址应为本指南开头的 Program ID。部署钱包需要有本地测试 SOL，然后部署：
+The keypair-derived address should match the Program ID at the start of this guide. Fund the CLI deploy wallet with local test SOL, then deploy:
 
 ```bash
 solana airdrop 10
@@ -118,47 +120,47 @@ solana program deploy target/deploy/pxsol_ss.so \
   --program-id target/deploy/pxsol_ss-keypair.json
 ```
 
-验证部署：
+Verify the deployment:
 
 ```bash
 solana program show 4C4tdiGW8HK9jnKQDEDtqh6xuKdtPpzE5yFNREi4tNiZ
 ```
 
-确认输出中的 `Owner` 是 `BPFLoaderUpgradeab1e...`（Upgradeable Loader），并检查 `Authority` 是预期的部署钱包地址。这个 authority 才能授权升级；`Data Length` 会随构建产物而变化，不要依赖固定字节数。
+Check that `Owner` is `BPFLoaderUpgradeab1e...` (the Upgradeable Loader) and that `Authority` is the expected deploy wallet. The authority authorizes program upgrades. `Data Length` varies with the build artifact; do not rely on a fixed size.
 
-本地部署的程序状态保存在 validator ledger 中。执行 `solana-test-validator --reset` 后，需要重新部署。
+The local deployment is stored in the validator ledger. After running `solana-test-validator --reset`, deploy the program again.
 
-## 4. 启动网页客户端
+## 4. Run the web client
 
-在另一个终端启动静态网页服务器：
+Start a static web server in another terminal:
 
 ```bash
 cd ~/pxsol-ss/client
 python3 -m http.server 3000
 ```
 
-浏览器打开 <http://localhost:3000>。客户端目前在 [client/index.html](client/index.html) 中配置为：
+Open <http://localhost:3000> in a browser. The client configuration in [client/index.html](client/index.html) is currently:
 
 ```js
 const PROGRAM_ID = new PublicKey("4C4tdiGW8HK9jnKQDEDtqh6xuKdtPpzE5yFNREi4tNiZ");
 const RPC = "http://127.0.0.1:8899";
 ```
 
-在 Phantom 中选择或添加指向 `http://127.0.0.1:8899` 的本地网络，并为该钱包地址领取本地测试 SOL：
+In Phantom, select or add a local network pointing to `http://127.0.0.1:8899`, then fund the Phantom wallet address with local test SOL:
 
 ```bash
 solana airdrop 10 <PHANTOM_WALLET_ADDRESS>
 ```
 
-本地 SOL 只存在于本地 ledger，与 Devnet 或 Mainnet SOL 不通用。
+Local SOL only exists in the local ledger and cannot be used on Devnet or Mainnet.
 
-前端是静态 HTML，不需要执行 `npm install`。页面通过 esm.sh 加载 `@solana/web3.js`，因此打开页面需要网络连接。
+The frontend is static HTML; `npm install` is not required. The page loads `@solana/web3.js` from esm.sh, so an internet connection is required to open it.
 
-### 前端交互要点
+### Frontend interaction notes
 
-- 浏览器没有 Node.js 的 `Buffer`。写入使用 `TextEncoder().encode(text)`；二进制数据转十六进制可使用 `Array.from(u8).map(b => b.toString(16).padStart(2, "0")).join("")`。
-- 客户端使用 `provider.signTransaction(tx)` 获取签名，再调用 `connection.sendRawTransaction(signed.serialize())` 广播。这样交易发往页面配置的 RPC，而不是依赖 Phantom 选择的 RPC 代为广播。
-- 指令账户顺序是程序 ABI，不能调整：
+- Browsers do not provide Node.js `Buffer`. Writes use `TextEncoder().encode(text)`. To convert binary data to hex, use `Array.from(u8).map(b => b.toString(16).padStart(2, "0")).join("")`.
+- The client signs with `provider.signTransaction(tx)` and broadcasts with `connection.sendRawTransaction(signed.serialize())`. This sends the transaction to the RPC configured by the page instead of relying on Phantom to broadcast through its selected RPC.
+- Account order is part of the program ABI and must not be changed:
 
   ```js
   keys: [
@@ -169,7 +171,7 @@ solana airdrop 10 <PHANTOM_WALLET_ADDRESS>
   ]
   ```
 
-- PDA 派生种子必须与链上程序一致：
+- The PDA derivation seed must match the on-chain program:
 
   ```js
   const [pda] = PublicKey.findProgramAddressSync(
@@ -178,13 +180,13 @@ solana airdrop 10 <PHANTOM_WALLET_ADDRESS>
   );
   ```
 
-## 5. 部署到 Devnet
+## 5. Deploy to Devnet
 
-Devnet 和本地验证器是两条独立的链。部署到 Devnet 后，网页客户端的 RPC 必须改为 Devnet；部署账户和 Phantom 钱包也需要各自有 Devnet SOL。
+Devnet and the local validator are separate chains. After deploying to Devnet, the web client's RPC must point to Devnet. The deploy wallet and the Phantom wallet each need their own Devnet SOL.
 
-1. 按第 2 节使用 `cargo build-sbf --arch v3 -- -Znext-lockfile-bump` 构建并验证 SBPFv3。
-2. 确认 `target/deploy/pxsol_ss-keypair.json` 是你控制并备份好的程序地址 keypair，且其公钥与客户端 `PROGRAM_ID` 相同。若 keypair 不存在，不要随意新建后仍沿用旧 Program ID；新 keypair 会对应新的程序地址，必须同步更新客户端。另确认 CLI 当前配置的钱包是你预期的升级 authority；首次部署时该钱包通常会成为 authority。
-3. 把 CLI 切换到 Devnet，检查连接，并为部署钱包领取 Devnet SOL：
+1. Build and verify SBPFv3 as described in section 2, using `cargo build-sbf --arch v3 -- -Znext-lockfile-bump`.
+2. Confirm that `target/deploy/pxsol_ss-keypair.json` is the program-address keypair you control and have backed up, and that its public key matches the client's `PROGRAM_ID`. If the keypair is missing, do not create a replacement and keep using the old Program ID: a new keypair has a different program address, which must also be updated in the client. Also confirm that the CLI wallet is the intended upgrade authority; it usually becomes the authority on initial deployment.
+3. Switch the CLI to Devnet, check the connection, and request Devnet SOL for the deploy wallet:
 
    ```bash
    solana config set --url devnet
@@ -192,8 +194,8 @@ Devnet 和本地验证器是两条独立的链。部署到 Devnet 后，网页�
    solana airdrop 10
    ```
 
-   水龙头有额度限制时，使用 Solana Devnet faucet 为部署钱包充值。
-4. 部署并验证：
+   If the faucet is rate-limited, use a Solana Devnet faucet to fund the deploy wallet.
+4. Deploy and verify:
 
    ```bash
    solana program deploy target/deploy/pxsol_ss.so \
@@ -201,19 +203,19 @@ Devnet 和本地验证器是两条独立的链。部署到 Devnet 后，网页�
    solana program show 4C4tdiGW8HK9jnKQDEDtqh6xuKdtPpzE5yFNREi4tNiZ
    ```
 
-5. 确认 [client/index.html](client/index.html) 中的 `PROGRAM_ID` 与部署地址一致，并将 RPC 改为：
+5. Confirm that `PROGRAM_ID` in [client/index.html](client/index.html) matches the deployed address, then change the RPC to:
 
    ```js
    const RPC = "https://api.devnet.solana.com";
    ```
 
-   重启网页服务器或刷新页面，在 Phantom 中切换到 Devnet，并为 Phantom 钱包领取 Devnet SOL。写入 PDA 需要支付交易手续费和 PDA 免租金余额。
+   Restart the web server or refresh the page, switch Phantom to Devnet, and fund the Phantom wallet with Devnet SOL. Writes require transaction fees and the PDA's rent-exempt balance.
 
-首次部署时，CLI 部署钱包通常会成为程序的升级 authority。程序地址 keypair 和升级 authority 是两个不同的身份：前者确定/签署 Program ID，后者授权升级。不要把任何私钥提交到仓库或发给他人。
+On initial deployment, the CLI deploy wallet usually becomes the program upgrade authority. The program-address keypair and the upgrade authority are separate identities: the former determines/signs for the Program ID; the latter authorizes upgrades. Never commit or share private keys.
 
-## 6. 升级与权限管理
+## 6. Upgrade and authority management
 
-程序升级时保持 Program ID 不变，使用持有升级 authority 的 CLI 钱包重新构建并部署。部署到已有程序时，`--program-id` 可以直接使用程序地址：
+To upgrade the program while keeping the same Program ID, build again and deploy with the CLI wallet that holds the upgrade authority. For an existing program, `--program-id` can be the program address:
 
 ```bash
 cargo build-sbf --arch v3 -- -Znext-lockfile-bump
@@ -221,55 +223,55 @@ solana program deploy target/deploy/pxsol_ss.so \
   --program-id 4C4tdiGW8HK9jnKQDEDtqh6xuKdtPpzE5yFNREi4tNiZ
 ```
 
-`solana config get` 可检查当前 CLI signer；它必须是程序当前 `Authority`，或由相应 authority 授权的 signer。切换本地验证器和 Devnet 时，先用 `solana config set --url ...` 确认当前集群，避免把程序部署到错误的网络。转移升级权限时，最好指定新 authority 的 keypair 文件：
+Use `solana config get` to check the current CLI signer; it must be the program's current `Authority` or a signer authorized by that authority. When switching between the local validator and Devnet, run `solana config set --url ...` and verify the active cluster before deploying. To transfer upgrade authority, it is safest to specify the new authority's keypair file:
 
 ```bash
 solana program set-upgrade-authority <PROGRAM_ID> \
   --new-upgrade-authority <NEW_AUTHORITY_KEYPAIR>
 ```
 
-如果只提供新 authority 的公钥而没有对应 keypair，CLI 可能要求显式添加 `--skip-new-upgrade-authority-signer-check`；使用前务必核对地址。
+If you provide only the new authority's public key and not its keypair, the CLI may require the explicit `--skip-new-upgrade-authority-signer-check` option. Verify the address carefully before using it.
 
-永久撤销升级权限不可逆，执行前务必确认不再需要升级：
+Revoking upgrade authority is irreversible. Only do this when you are certain the program will never need another upgrade:
 
 ```bash
 solana program set-upgrade-authority <PROGRAM_ID> --final
 ```
 
-清空本地账本时，先在 validator 终端按 `Ctrl+C` 停止验证器，再重新运行 `solana-test-validator --reset`。
+To clear the local ledger, first stop the validator with `Ctrl+C`, then start it again with `solana-test-validator --reset`.
 
-## 7. 验证写入行为
+## 7. Verify write behavior
 
-连接钱包后，依次写入以下内容，并观察网页中的本次会话历史、PDA 字节数和 lamports：
+After connecting a wallet, write the following values in order and observe the session history, PDA data length, and lamports:
 
-| 操作 | 程序路径 | 预期现象 |
+| Operation | Program path | Expected result |
 |---|---|---|
-| 首次写入 `hello solana storage` | 创建 PDA 并写入 | lamports 从 0 增加，账户数据初始化 |
-| 写入更长文本 | 补租金并扩容 | 数据长度增加，通常 lamports 增加 |
-| 写入 `short` | 缩容并退回多余 lamports | 数据长度减少，通常 lamports 减少 |
-| 再写入 `short` | 等长覆写 | 数据长度和 lamports 不变 |
+| First write: `hello solana storage` | Create the PDA and write data | Lamports increase from 0; account data is initialized |
+| Write a longer string | Top up rent and expand | Data length increases; lamports usually increase |
+| Write `short` | Shrink and refund excess lamports | Data length decreases; lamports usually decrease |
+| Write `short` again | Overwrite without changing length | Data length and lamports stay the same |
 
-租金豁免余额按本次数据长度重新计算。客户端显示的是链上当前账户数据；历史时间线仅保存在当前页面会话中，不是链上历史记录。
+The rent-exempt balance is recalculated from the current data length. The client displays current on-chain account data; its history timeline is only stored for the current page session and is not an on-chain history.
 
-## 8. 常见问题
+## 8. Troubleshooting
 
-| 症状 | 常见原因 | 处理方式 |
+| Symptom | Common cause | What to do |
 |---|---|---|
-| `Address already in use` | 已有 validator 占用本地端口 | 先运行 `solana cluster-version`；若能返回版本，直接使用现有 validator，不要再启动一个 |
-| `solana cluster-version` 无响应 | RPC 没有就绪，或端口/进程状态异常 | 查看 validator 终端日志；用 `ss -ltnp \| grep -E ':8899|:8900'` 检查监听端口，确认后再处理对应进程 |
-| `unable to confirm transaction` | validator 尚未就绪、RPC 未连通或部署钱包余额不足 | 等待 validator 就绪，检查 `solana config get`，再为当前集群的钱包充值 |
-| `readelf` 的 `grep` 没有输出 | locale 输出不是英文 | 使用 `LC_ALL=C readelf ...`，或使用 `od` 检查 header |
-| header flags 是 `0x0` | 构建时没有指定 SBPFv3 | 重新运行 `cargo build-sbf --arch v3 -- -Znext-lockfile-bump` 并复查 |
-| `InvalidSeeds` / PDA 不匹配 | 前端的程序 ID 或 PDA 种子与链上不一致 | 确认前端使用正确 Program ID 和 `[userKey.toBuffer()]` 种子 |
-| `AccountBorrowFailed` | 同一账户存在冲突的可变/不可变数据借用 | 先读取并保存需要的值，再进行可变借用 |
-| `Buffer is not defined` | 在浏览器代码中使用 Node.js `Buffer` | 使用 `TextEncoder` 和 `Uint8Array` |
-| Phantom 与本地网络不一致提示 | Phantom 当前选择的网络和页面 RPC 不同 | 确认页面 RPC 是本地地址；用 `signTransaction` 签名并由页面 RPC 广播，若 Phantom 不允许签名则切换到相同的本地网络 |
-| `curve25519` 相关编译错误 | `solana-pubkey` 缺少 feature | 在 `Cargo.toml` 启用 `features = ["curve25519"]` |
-| `create_account` 或 `transfer` 找不到 | `solana-system-interface` 缺少 feature | 在 `Cargo.toml` 启用 `features = ["bincode"]` |
+| `Address already in use` | Another validator is using the local port | Run `solana cluster-version` first. If it returns a version, use the existing validator instead of starting another. |
+| `solana cluster-version` hangs | The RPC is not ready, or the port/process is in an inconsistent state | Check validator logs; inspect listening ports with `ss -ltnp \| grep -E ':8899\|:8900'` and identify the relevant process before taking action. |
+| `unable to confirm transaction` | Validator is not ready, RPC is unreachable, or deploy wallet has insufficient funds | Wait for the validator, check `solana config get`, and fund the wallet on the currently selected cluster. |
+| No output from `readelf`'s `grep` | Output is localized | Use `LC_ALL=C readelf ...` or inspect the header with `od`. |
+| Header flags are `0x0` | SBPFv3 was not specified during the build | Rebuild with `cargo build-sbf --arch v3 -- -Znext-lockfile-bump` and check again. |
+| `InvalidSeeds` / PDA mismatch | Client program ID or PDA seed does not match the on-chain program | Verify the Program ID and `[userKey.toBuffer()]` seed used by the client. |
+| `AccountBorrowFailed` | Conflicting mutable/immutable borrow of the same account | Read and save the required values before taking a mutable borrow. |
+| `Buffer is not defined` | Node.js `Buffer` is used in browser code | Use `TextEncoder` and `Uint8Array`. |
+| Phantom warns that the network does not match | Phantom's selected network differs from the page RPC | Verify the page RPC is the local address; sign with `signTransaction` and broadcast through the page RPC. If Phantom refuses to sign, switch it to the same local network. |
+| `curve25519` compilation error | `solana-pubkey` is missing a feature | Enable `features = ["curve25519"]` in `Cargo.toml`. |
+| `create_account` or `transfer` not found | `solana-system-interface` is missing a feature | Enable `features = ["bincode"]` in `Cargo.toml`. |
 
-## 9. 最小命令序列（本地从零运行）
+## 9. Minimal command sequence (fresh local run)
 
-终端 A：
+Terminal A:
 
 ```bash
 cd ~/pxsol-ss
@@ -278,9 +280,9 @@ od -An -tx1 -j 0x30 -N 4 target/deploy/pxsol_ss.so
 solana-test-validator --reset
 ```
 
-期望 `od` 输出 `03 00 00 00`。验证器启动后保持终端 A 运行。
+Expect `od` to print `03 00 00 00`. Leave the validator running in terminal A.
 
-终端 B：
+Terminal B:
 
 ```bash
 cd ~/pxsol-ss
@@ -292,11 +294,11 @@ solana program deploy target/deploy/pxsol_ss.so \
 solana program show 4C4tdiGW8HK9jnKQDEDtqh6xuKdtPpzE5yFNREi4tNiZ
 ```
 
-终端 C：
+Terminal C:
 
 ```bash
 cd ~/pxsol-ss/client
 python3 -m http.server 3000
 ```
 
-打开 <http://localhost:3000>，在 Phantom 中选择本地 RPC 并连接钱包，即可读取和写入。
+Open <http://localhost:3000>, select the local RPC in Phantom, and connect your wallet to read and write data.
